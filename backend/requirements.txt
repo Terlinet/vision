@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+httpx
+openai
+pydantic
+edge-tts
+ultralytics
+transformers
+torch
+pillow
+numpy<2.0
+opencv-python-headless
+deep-translator
+python-multipart
+speechrecognition
+pydub

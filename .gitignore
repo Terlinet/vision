@@ -1,0 +1,53 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+
+# Android
+.gradle/
+local.properties
+*.apk
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+app/src/main/res/values/colors.xml
+
+# iOS
+.generated/
+Flutter/App.framework
+Flutter/Flutter.framework
+Flutter/Generated.xcconfig
+Flutter/flutter_export_environment.sh
+ServiceDefinitions.json
+Pods/
+DerivedData/
+*.moved-aside
+*.xcuserstate
+*.xcresult
+
+# Web
+.web/
+
+# macOS/Linux/Windows build folders
+/linux/flutter/ephemeral/
+/macos/Flutter/ephemeral/
+/windows/flutter/ephemeral/
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+
+# VS Code
+.vscode/
+
+# Project specific
+backend/venv/
+backend/__pycache__/
+*.pt
+narration.mp3
