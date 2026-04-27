@@ -30,12 +30,15 @@ app.add_middleware(
 )
 
 # --- CONFIGURAÇÕES DE IA (GROQ) ---
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "GROQ_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    logging.warning("AVISO: GROQ_API_KEY não encontrada. O sistema pode falhar em chamadas de IA.")
+
 MODEL_NAME = "llama-3.3-70b-versatile"
 
 client_groq = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key=GROQ_API_KEY,
+    api_key=GROQ_API_KEY or "TEMPORARY_KEY_IF_NEEDED",
 )
 
 # --- CARREGAMENTO DE MODELOS ---
@@ -69,7 +72,8 @@ async def generate_voice_base64(text: str):
 @app.post('/predict')
 async def predict(
     image: UploadFile = File(...),
-    user_query: Optional[str] = Form(None)
+    user_query: Optional[str] = Form(None),
+    camera_type: Optional[str] = Form("traseira")
 ):
     try:
         raw_bytes = await image.read()
@@ -86,29 +90,36 @@ async def predict(
         results = yolo_model(img_cv2)
         detections = list(set([yolo_model.names[int(box.cls)] for r in results for box in r.boxes]))
 
-        # Atualiza Memória Contextual
-        memory["last_detections"] = detections
-        memory["last_caption"] = desc_en
-
         # 3. Lógica de Interação Groq (Decide se responde pergunta ou narra tudo)
-        # Se não houver query, o Bee narra o ambiente por padrão.
         instruction = user_query if user_query and user_query.strip() else "Descreva o ambiente de forma fluida."
 
         prompt = f"""
         Você é o Bee, o assistente inteligente de visão da TerlineT.
-        CONTEXTO VISUAL:
+        CONTEXTO VISUAL ATUAL (Câmera {camera_type}):
         - Objetos detectados (YOLO): {', '.join(detections) if detections else 'Nenhum objeto óbvio'}
         - Descrição base (BLIP): {desc_en}
+
+        MEMÓRIA RECENTE (Contexto anterior):
+        - Últimos objetos: {', '.join(memory["last_detections"])}
+        - Última descrição: {memory["last_caption"]}
+
         PERGUNTA/COMANDO DO USUÁRIO: "{instruction}"
+
         SUA MISSÃO:
         1. Se o usuário perguntou sobre algo específico, responda com precisão baseado nos dados visuais.
         2. Se ele pediu para descrever tudo, faça uma narração elegante em português.
-        3. Após responder uma pergunta pontual, você PODE sugerir: "Deseja que eu descreva o resto do ambiente?".
+        3. Se houver mudança significativa em relação à memória, você pode comentar.
+        4. Após responder uma pergunta pontual, você PODE sugerir: "Deseja que eu descreva o resto do ambiente?".
+
         REGRAS:
         - Idioma: Português do Brasil.
         - Tom: Profissional, tecnológico e empático.
         - Curto: Máximo 3 frases.
         """
+
+        # Atualiza Memória Contextual DEPOIS de gerar o prompt para manter o estado anterior durante a geração
+        memory["last_detections"] = detections
+        memory["last_caption"] = desc_en
 
         loop = asyncio.get_event_loop()
         completion = await loop.run_in_executor(None, lambda: client_groq.chat.completions.create(

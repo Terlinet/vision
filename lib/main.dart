@@ -51,6 +51,7 @@ class ObjectDetectionScreen extends StatefulWidget {
 }
 
 class _ObjectDetectionScreenState extends State<ObjectDetectionScreen> with TickerProviderStateMixin {
+  int _selectedCameraIndex = 0;
   Uint8List? _imageBytes;
   List<dynamic> _results = [];
   String _description = "";
@@ -79,6 +80,59 @@ class _ObjectDetectionScreenState extends State<ObjectDetectionScreen> with Tick
     _coreController = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
     _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _initSpeech();
+    
+    // Mostra orientações após o primeiro frame
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showInstructions());
+  }
+
+  void _showInstructions() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF0A0A15),
+        shape: RoundedRectangleBorder(side: const BorderSide(color: Colors.cyan, width: 1), borderRadius: BorderRadius.circular(15)),
+        title: const Text("Bem-vindo ao TerlineT Vision", style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _instructionItem(Icons.touch_app, "Toque no Núcleo", "Inicia ou para a visualização neural em tempo real."),
+            _instructionItem(Icons.mic, "Pressione e Segure", "Ativa o comando de voz para perguntar algo ao Bee."),
+            _instructionItem(Icons.flip_camera_ios, "Ícone de Câmera", "Alterna entre a câmera frontal e traseira."),
+            const SizedBox(height: 10),
+            const Text("O Bee narrará o ambiente e responderá suas dúvidas com inteligência artificial.", style: TextStyle(color: Colors.white70, fontSize: 12, fontStyle: FontStyle.italic)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("ENTENDIDO", style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _instructionItem(IconData icon, String title, String desc) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.amber, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(desc, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _initSpeech() async {
@@ -142,14 +196,64 @@ class _ObjectDetectionScreenState extends State<ObjectDetectionScreen> with Tick
         _description = "";
       });
     } else {
-      if (_cameras.isEmpty) return;
-      _cameraController = CameraController(_cameras[0], ResolutionPreset.medium, enableAudio: false);
+      if (_cameras.isEmpty) {
+        _showNoCameraAlert();
+        return;
+      }
+      _cameraController = CameraController(_cameras[_selectedCameraIndex], ResolutionPreset.medium, enableAudio: false);
       try {
         await _cameraController!.initialize();
         setState(() { _isRealTime = true; _imageBytes = null; });
       } catch (e) {
         print('Erro câmera: $e');
       }
+    }
+  }
+
+  void _showNoCameraAlert() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.videocam_off, color: Colors.white),
+            SizedBox(width: 10),
+            Text("Nenhuma câmera detectada neste dispositivo."),
+          ],
+        ),
+        backgroundColor: Colors.redAccent.withOpacity(0.8),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(label: "OK", textColor: Colors.white, onPressed: () {}),
+      ),
+    );
+  }
+
+  void _switchCamera() async {
+    if (_cameras.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Apenas uma câmera detectada."), duration: Duration(seconds: 2))
+      );
+      return;
+    }
+    
+    _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
+    
+    if (_isRealTime) {
+      // Se estiver em tempo real, reinicia a câmera com o novo índice
+      await _cameraController?.dispose();
+      _cameraController = CameraController(
+        _cameras[_selectedCameraIndex], 
+        ResolutionPreset.medium, 
+        enableAudio: false
+      );
+      try {
+        await _cameraController!.initialize();
+        setState(() {});
+      } catch (e) {
+        print('Erro ao trocar câmera: $e');
+      }
+    } else {
+      setState(() {});
     }
   }
 
@@ -170,6 +274,7 @@ class _ObjectDetectionScreenState extends State<ObjectDetectionScreen> with Tick
       var request = http.MultipartRequest('POST', Uri.parse(_apiUrl));
       request.files.add(http.MultipartFile.fromBytes('image', bytes, filename: file.name));
       if (query != null) request.fields['user_query'] = query;
+      request.fields['camera_type'] = _selectedCameraIndex == 0 ? "traseira" : "frontal";
 
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
@@ -207,8 +312,25 @@ class _ObjectDetectionScreenState extends State<ObjectDetectionScreen> with Tick
           SafeArea(
             child: Column(
               children: [
-                const SizedBox(height: 30),
-                const HolographicHeader(),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const SizedBox(width: 50), // Espaçador para centralizar o header
+                    const HolographicHeader(),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 20),
+                      child: IconButton(
+                        icon: Icon(
+                          _selectedCameraIndex == 0 ? Icons.camera_rear : Icons.camera_front,
+                          color: Colors.cyan.withOpacity(0.7),
+                        ),
+                        onPressed: _switchCamera,
+                        tooltip: "Trocar Câmera",
+                      ),
+                    ),
+                  ],
+                ),
                 const Spacer(),
                 Center(
                   child: NeuralBeeCore(
@@ -299,7 +421,14 @@ class QuantumParticle {
   late Color color;
   static final math.Random _rand = math.Random();
   QuantumParticle() { respawn(); }
-  void respawn() { x = _rand.nextDouble() * 500; y = _rand.nextDouble() * 800; vx = (_rand.nextDouble() - 0.5) * 4; vy = (_rand.nextDouble() - 0.5) * 4; size = _rand.nextDouble() * 1.0 + 0.2; color = _rand.nextBool() ? Colors.cyan : Colors.amber; }
+  void respawn() { 
+    x = _rand.nextDouble() * 500; 
+    y = _rand.nextDouble() * 800; 
+    vx = (_rand.nextDouble() - 0.5) * 4; 
+    vy = (_rand.nextDouble() - 0.5) * 4; 
+    size = _rand.nextDouble() * 1.8 + 0.5; // Partículas levemente maiores
+    color = _rand.nextBool() ? Colors.cyanAccent : Colors.amberAccent; // Cores mais vivas
+  }
   void update(Size screen, bool isHighEnergy, List<QuantumParticle> others) {
     double centerX = 0, centerY = 0, avgVx = 0, avgVy = 0, closeDx = 0, closeDy = 0;
     int count = 0;
@@ -326,13 +455,27 @@ class QuantumSwarmPainter extends CustomPainter {
   final double animation;
   final bool isHighEnergy;
   QuantumSwarmPainter(this.particles, this.animation, this.isHighEnergy);
+  
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
     for (var p in particles) {
       p.update(size, isHighEnergy, particles);
-      paint.color = p.color.withOpacity(0.05 + (math.sin(animation * 2 * math.pi + p.x * 0.01) + 1) * 0.15);
-      canvas.drawCircle(Offset(p.x, p.y), p.size, paint);
+      
+      // Cálculo de opacidade pulsante intensificada
+      final opacity = (0.3 + (math.sin(animation * 2 * math.pi + p.x * 0.01) + 1) * 0.35).clamp(0.0, 1.0);
+      
+      // Efeito de brilho externo (Glow/Bloom)
+      final glowPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = p.color.withOpacity(opacity * 0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      canvas.drawCircle(Offset(p.x, p.y), p.size * 2.5, glowPaint);
+
+      // Núcleo sólido e brilhante da partícula
+      final corePaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = p.color.withOpacity(opacity);
+      canvas.drawCircle(Offset(p.x, p.y), p.size, corePaint);
     }
   }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
